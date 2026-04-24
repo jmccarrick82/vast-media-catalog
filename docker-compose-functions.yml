@@ -1,0 +1,85 @@
+version: "3.8"
+
+# This compose file is for BUILDING function container images only.
+# These containers are not long-running services — they are invoked
+# by VAST's serverless engine when a video file is PUT.
+#
+# Build all images:
+#   docker compose -f docker-compose-functions.yml build
+#
+# Build specific image:
+#   docker compose -f docker-compose-functions.yml build hash-comparator
+
+services:
+  # ── Shared base image ──────────────────────────────────────────────────
+  base:
+    build:
+      context: .
+      dockerfile: shared/Dockerfile.base
+    image: media-catalog-base:latest
+
+  # ── Layer 0 — Foundation (parallel, all need video file) ───────────────
+  metadata-extractor:
+    build:
+      context: .
+      dockerfile: functions/foundation/metadata-extractor/Dockerfile
+    image: media-catalog-metadata-extractor:latest
+    depends_on: [base]
+
+  hash-generator:
+    build:
+      context: .
+      dockerfile: functions/foundation/hash-generator/Dockerfile
+    image: media-catalog-hash-generator:latest
+    depends_on: [base]
+
+  face-detector:
+    build:
+      context: .
+      dockerfile: functions/foundation/face-detector/Dockerfile
+    image: media-catalog-face-detector:latest
+    depends_on: [base]
+
+  audio-analyzer:
+    build:
+      context: .
+      dockerfile: functions/foundation/audio-analyzer/Dockerfile
+    image: media-catalog-audio-analyzer:latest
+    depends_on: [base]
+
+  video-subclip:
+    build:
+      context: .
+      dockerfile: functions/foundation/video-subclip/Dockerfile
+    image: media-catalog-video-subclip:latest
+    depends_on: [base]
+
+  # ── Layer 1 — Analysis (parallel, after Layer 0) ───────────────────────
+  clip-embedder:
+    build:
+      context: .
+      dockerfile: functions/analysis/clip-embedder/Dockerfile
+    image: media-catalog-clip-embedder:latest
+    depends_on: [base]
+
+  synthetic-detector:
+    build:
+      context: .
+      dockerfile: functions/analysis/synthetic-detector/Dockerfile
+    image: media-catalog-synthetic-detector:latest
+    depends_on: [base]
+
+  hash-comparator:
+    build:
+      context: .
+      dockerfile: functions/analysis/hash-comparator/Dockerfile
+    image: media-catalog-hash-comparator:latest
+    depends_on: [base]
+
+  # ── Layer 2 — Graph (after hash-comparator + synthetic-detector) ───────
+  graph-analyzer:
+    build:
+      context: .
+      dockerfile: functions/analysis/graph-analyzer/Dockerfile
+    image: media-catalog-graph-analyzer:latest
+    depends_on: [base]

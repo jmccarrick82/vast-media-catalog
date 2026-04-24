@@ -1,0 +1,72 @@
+# ── Secrets (live credentials) ─────────────────────────────────────────
+# Each function has its own config.json with live VAST / inference keys.
+# A sanitized .example.json is committed alongside so new clones know
+# what to fill in. Never commit the real thing.
+config/config.json
+functions/**/config.json
+
+# C2PA signing key — private key, never commit. The public cert
+# (signing.pub) stays since it's safe to share; openssl.cnf stays so
+# anyone can regenerate the key pair locally.
+functions/foundation/media-packager/c2pa-signing/signing.key
+
+# ── Bundled binaries (downloadable; don't bloat the repo) ──────────────
+# ffmpeg + ffprobe are ~80MB each; c2patool is ~21MB.
+# See functions/README.md for how to refresh them.
+functions/**/ffmpeg
+functions/**/ffprobe
+functions/foundation/media-packager/c2patool
+webapp/c2patool
+
+# ── Python ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+.pytest_cache/
+
+# ── Node / frontend build artifacts ────────────────────────────────────
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+webapp/frontend/.vite/
+**/node_modules/
+npm-debug.log*
+
+# ── Docker / build outputs ─────────────────────────────────────────────
+functions/**/build.log
+webapp/build.log
+**/.docker/
+
+# ── Scratch / test media ───────────────────────────────────────────────
+tmp/
+test-media/
+test-clips/
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+# But keep .mp4 references in docs or test fixtures that someone might
+# actually want checked in — none exist today; if they're ever added,
+# negate them here with `!path/to/fixture.mp4`.
+
+# ── OS / editor cruft ──────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# ── Claude Code / local agent state ────────────────────────────────────
+.claude/
+CLAUDE.md
+
+# ── Local-only overrides anyone adds ───────────────────────────────────
+*.local
+*.local.json

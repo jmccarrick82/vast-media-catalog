@@ -1,0 +1,53 @@
+{
+  "vast": {
+    "endpoint": "http://YOUR_VAST_DB_VIP",
+    "access_key": "YOUR_VAST_ACCESS_KEY",
+    "secret_key": "YOUR_VAST_SECRET_KEY",
+    "bucket": "james-db",
+    "schema": "media-catalog"
+  },
+  "s3": {
+    "endpoint": "http://YOUR_VAST_S3_ENDPOINT",
+    "access_key": "YOUR_S3_ACCESS_KEY",
+    "secret_key": "YOUR_S3_SECRET_KEY"
+  },
+  "trino": {
+    "host": "trino",
+    "port": 8080,
+    "catalog": "vast",
+    "schema": "james-db/media-catalog"
+  },
+  "catalog": {
+    "big_catalog_table": "vast-big-catalog-bucket/vast_big_catalog_schema",
+    "audit_log_table": "vast-audit-log-bucket/vast_audit_log_schema",
+    "media_search_path": "/james-media-catalog"
+  },
+  "reconciler": {
+    "interval_seconds": 1800,
+    "lookback_seconds": 2100
+  },
+  "gpu": {
+    "host": "GPU_HOST_IP",
+    "user": "GPU_HOST_USER",
+    "password": "GPU_HOST_PASSWORD",
+    "deploy_path": "/home/GPU_HOST_USER/media-catalog",
+    "containers": [
+      "audio-analyzer",
+      "clip-embedder"
+    ]
+  },
+  "subclip": {
+    "duration_seconds": 30,
+    "max_subclips": 100
+  },
+  "inference": {
+    "host": "inference.example.com",
+    "api_key": "YOUR_INFERENCE_KEY",
+    "embed_model": "nvidia/nv-embed-v1",
+    "embed_dim": 4096
+  },
+  "qdrant": {
+    "url": "http://YOUR_QDRANT_HOST:6333",
+    "collection": "subclips"
+  }
+}

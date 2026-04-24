@@ -1,0 +1,34 @@
+name: james-media-hash
+description: Media Catalog hash generation pipeline
+tags:
+namespace: default
+kubernetes_cluster_vrn: vast:dataengine:kubernetes-clusters:var201-k8s
+manifest:
+  triggers:
+    - name: james-media-catalog-1
+      vrn: vast:dataengine:triggers:james-media-catalog
+  function_deployments:
+    - name: james-hash-generator-1
+      function_vrn: vast:dataengine:functions:james-hash-generator
+      revision: 1
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: 500m
+        min_memory: 128Mi
+        max_memory: 512Mi
+        timeout: 120
+  links:
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-hash-generator-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered

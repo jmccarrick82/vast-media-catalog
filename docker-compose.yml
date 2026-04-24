@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: media-catalog-webapp
+    ports:
+      - "3000:3000"   # Flask web UI
+      - "8080:8080"   # Trino
+    volumes:
+      - ./config/config.json:/app/config.json:ro
+    environment:
+      - CONFIG_PATH=/app/config.json
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/personas"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Vector DB for subclip text embeddings. The subclip-ai-analyzer
+  # DataEngine function writes directly here (via the host-exposed :6333)
+  # at the end of each run, right after summarization. The webapp reads
+  # from here on /api/semantic-search.
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: media-catalog-qdrant
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:

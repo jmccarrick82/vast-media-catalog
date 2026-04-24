@@ -1,0 +1,343 @@
+name: james-media-unified
+description: Unified media catalog pipeline - all functions triggered from single S3 event
+tags:
+namespace: default
+kubernetes_cluster_vrn: vast:dataengine:kubernetes-clusters:var201-k8s
+manifest:
+  triggers:
+    - name: james-media-catalog-1
+      vrn: vast:dataengine:triggers:james-media-catalog
+    - name: james-subclips-trigger-1
+      vrn: vast:dataengine:triggers:james-subclips-trigger
+    - name: james-inbox-trigger-1
+      vrn: vast:dataengine:triggers:james-inbox-trigger
+    - name: james-qc-passed-trigger-1
+      vrn: vast:dataengine:triggers:james-qc-passed-trigger
+    - name: james-clips-ready-trigger-1
+      vrn: vast:dataengine:triggers:james-clips-ready-trigger
+
+  function_deployments:
+    # ── Pre-ingest QC (runs before james-media-catalog) ───────────────
+    - name: james-qc-inspector-1
+      function_vrn: vast:dataengine:functions:james-qc-inspector
+      revision: 6
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 4
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 200m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 600
+
+    # ── Phase 2: AI clipper (triggered by qc-passed bucket) ──────────
+    # Sequential vision inference per shot; keep concurrency moderate to
+    # not hammer the shared inference endpoint. Long timeout covers N
+    # classification calls for a long video.
+    - name: james-ai-clipper-2
+      function_vrn: vast:dataengine:functions:james-ai-clipper
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 4
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 200m
+        max_cpu: "1"
+        min_memory: 512Mi
+        max_memory: 2Gi
+        timeout: 600
+
+    # ── Phase 3: Media packager (triggered by clips bucket _ready.json) ──
+    # Transcodes each clip into every rendition preset, signs with C2PA,
+    # emits manifest.json, writes delivery_packages + package_renditions.
+    # CPU-heavy (multiple ffmpeg passes + c2patool signing per rendition).
+    - name: james-media-packager-1
+      function_vrn: vast:dataengine:functions:james-media-packager
+      revision: 4
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 2
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 500m
+        max_cpu: "2"
+        min_memory: 1Gi
+        max_memory: 4Gi
+        timeout: 600
+
+    # ── Foundation functions ──────────────────────────────────────────
+    - name: james-metadata-extractor-1
+      function_vrn: vast:dataengine:functions:james-metadata-extractor
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: 500m
+        min_memory: 128Mi
+        max_memory: 512Mi
+        timeout: 60
+
+    - name: james-hash-generator-1
+      function_vrn: vast:dataengine:functions:james-hash-generator
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: 500m
+        min_memory: 128Mi
+        max_memory: 512Mi
+        timeout: 120
+
+    - name: james-keyframe-extractor-1
+      function_vrn: vast:dataengine:functions:james-keyframe-extractor
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 200m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 180
+
+    - name: james-video-subclip-1
+      function_vrn: vast:dataengine:functions:james-video-subclip
+      revision: 4
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 180
+
+    - name: james-audio-analyzer-1
+      function_vrn: vast:dataengine:functions:james-audio-analyzer
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 180
+
+    # ── Analysis functions ────────────────────────────────────────────
+    - name: james-synthetic-detector-1
+      function_vrn: vast:dataengine:functions:james-synthetic-detector
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: 500m
+        min_memory: 128Mi
+        max_memory: 512Mi
+        timeout: 120
+
+    - name: james-hash-comparator-1
+      function_vrn: vast:dataengine:functions:james-hash-comparator
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: 500m
+        min_memory: 128Mi
+        max_memory: 512Mi
+        timeout: 180
+
+    - name: james-graph-analyzer-1
+      function_vrn: vast:dataengine:functions:james-graph-analyzer
+      revision: 3
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 1
+        max_concurrency: 10
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 100m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 180
+
+    # ── Subclip AI analyzer (separate trigger) ────────────────────────
+    # Capped at max 2 instances to avoid hammering the shared inference
+    # endpoint. Long timeout (600s) accommodates worst-case 2x 60s retries
+    # across multiple inference steps.
+    - name: james-subclip-ai-analyzer-1
+      function_vrn: vast:dataengine:functions:james-subclip-ai-analyzer
+      revision: 15
+      config:
+        log_level: DEBUG
+      resources:
+        # Raised from 2 → 8 so Knative keeps more warm pods alive and
+        # events don't drip-feed after the first burst exhausts the
+        # initial pods. The retry + exponential backoff wrapper handles
+        # any endpoint throttling we hit from higher parallelism.
+        min_concurrency: 1
+        max_concurrency: 8
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 200m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 600
+
+  links:
+    # Pre-ingest: inbox → QC inspector
+    - source:
+        - james-inbox-trigger-1
+      destination:
+        - james-qc-inspector-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    # Phase 2: qc-passed → AI clipper
+    - source:
+        - james-qc-passed-trigger-1
+      destination:
+        - james-ai-clipper-2
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    # Phase 3: clips-ready marker → media packager
+    - source:
+        - james-clips-ready-trigger-1
+      destination:
+        - james-media-packager-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    # All 8 functions fan out from the same trigger
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-metadata-extractor-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-hash-generator-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-keyframe-extractor-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-video-subclip-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-audio-analyzer-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-synthetic-detector-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-hash-comparator-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    - source:
+        - james-media-catalog-1
+      destination:
+        - james-graph-analyzer-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered
+
+    # Subclip bucket trigger fans out to AI analyzer
+    - source:
+        - james-subclips-trigger-1
+      destination:
+        - james-subclip-ai-analyzer-1
+      topic: vast:dataengine:topics:engine-broker/main
+      config:
+        retries: 3
+        events_order: unordered

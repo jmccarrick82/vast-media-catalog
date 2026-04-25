@@ -54,6 +54,26 @@ manifest:
         max_memory: 2Gi
         timeout: 600
 
+    # ── Phase 4: Generic subclipper (direct-invoke only, no trigger) ─────
+    # Invoked via vast functions invoke / the DataEngine invoke API with
+    # {src, clips:[{start,end,...}]}. Cuts many clips from one source in
+    # a single call. No VAST DB writes — the caller tracks results.
+    - name: james-subclipper-1
+      function_vrn: vast:dataengine:functions:james-subclipper
+      revision: 1
+      config:
+        log_level: DEBUG
+      resources:
+        min_concurrency: 0
+        max_concurrency: 4
+        autoscaling_rps_factor: 2
+        autoscaling_concurrency_overload_factor: "1"
+        min_cpu: 200m
+        max_cpu: "1"
+        min_memory: 256Mi
+        max_memory: 1Gi
+        timeout: 600
+
     # ── Phase 3: Media packager (triggered by clips bucket _ready.json) ──
     # Transcodes each clip into every rendition preset, signs with C2PA,
     # emits manifest.json, writes delivery_packages + package_renditions.

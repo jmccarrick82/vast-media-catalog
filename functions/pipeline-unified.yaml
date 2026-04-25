@@ -40,7 +40,7 @@ manifest:
     # classification calls for a long video.
     - name: james-ai-clipper-2
       function_vrn: vast:dataengine:functions:james-ai-clipper
-      revision: 5
+      revision: 6
       config:
         log_level: DEBUG
       resources:

@@ -240,7 +240,9 @@ Goal: per-clip AI-driven extraction given a natural-language prompt.
 - [x] Prompt sourcing: S3 object metadata `x-amz-meta-clip-prompt` > sidecar JSON (not yet) > `ai-clipper:default_clip_prompt` config
 - [x] Two-pass strategy: 11B primary, borderline band (low ≤ conf < high) escalates to 90B; configurable
 - [x] Editorial buffer (v4, 2026-04-25): `clip_buffer_pre_seconds` + `clip_buffer_post_seconds` knobs add lead-in / tail-out around the matched span. Applied AFTER constrain — additive on top of `max_clip_seconds`. Clamped to `[0, source_duration]`.
-- [x] Smoke test: basketball clip with prompt `"A person handling a basketball"` → 4 shots → shot 0 MATCH 0.90 → 1 clip cut in ~18s
+- [x] **LLM curation** (v6, 2026-04-25): when more than `max_clips_per_source` candidates match (default lowered 20 → 5), a text-only LLM (`nvidia/llama-3.3-70b-instruct` by default) ranks candidates by match quality + content diversity + chronological spread, returning the best N. Falls back to top-K-by-confidence if the curation call fails. Five new knobs under `Curation`: `curation_enabled`, `curation_model`, `curation_timeout_seconds`, `curation_retries`, `curation_diversity_weight`.
+- [x] Smoke test (basketball, 90s): 4 shots → shot 0 MATCH 0.90 → 1 clip cut in ~18s
+- [x] Smoke test (Big Buck Bunny, 5min, prompt `"A bunny or rabbit on screen"`): vision found 44 matching shots → merged into 19 candidate spans → constrain dropped 2 short → **17 candidates handed to LLM curator** → 5 selected with chronological spread (5s, 71s, 201s, 224s, 268s) covering the whole runtime instead of clustering at start
 
 ### Phase 3 — Packaging + C2PA provenance + hand-off ✅ COMPLETE (v4 deployed 2026-04-22)
 

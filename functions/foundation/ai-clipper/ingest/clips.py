@@ -59,14 +59,15 @@ CLIPS_CONFIG_SCHEMA = [
     {
         "key": "max_clips_per_source",
         "type": "int",
-        "default": 20,
+        "default": 5,
         "min": 1,
         "max": 500,
         "group": "Clip assembly",
         "order": 40,
         "description": (
-            "Cap on clips extracted per source video. If more shots match "
-            "than this, the highest-confidence ones win."
+            "Cap on clips extracted per source video. When more candidates "
+            "match than this, an LLM curation pass picks the best N "
+            "(see curation_* knobs); falls back to highest-confidence on failure."
         ),
     },
     {
@@ -233,9 +234,14 @@ def constrain_clips(
     clips: List[ClipSpan],
     min_clip_seconds: float = 2.0,
     max_clip_seconds: float = 30.0,
-    max_clips: int = 20,
+    max_clips: Optional[int] = None,
 ) -> List[ClipSpan]:
-    """Apply duration + count constraints. Keeps the highest-confidence clips."""
+    """Apply duration + (optional) count constraints.
+
+    `max_clips=None` (default) leaves all duration-valid candidates intact;
+    a downstream curation pass is responsible for picking the top N. Pass
+    an integer to enable the legacy "top-K by confidence" cap as a fallback.
+    """
     # Drop too-short
     kept = [c for c in clips if c.duration >= min_clip_seconds]
 
@@ -245,7 +251,6 @@ def constrain_clips(
         if c.duration <= max_clip_seconds:
             trimmed.append(c)
             continue
-        # center on the middle of the span
         mid = (c.start + c.end) / 2
         half = max_clip_seconds / 2
         c2 = ClipSpan(
@@ -258,13 +263,27 @@ def constrain_clips(
         )
         trimmed.append(c2)
 
-    # Cap by count — highest confidence wins, preserve source order in output
-    if len(trimmed) > max_clips:
+    # Optional fallback cap — kept for callers that don't run curation.
+    if max_clips is not None and len(trimmed) > max_clips:
         top = sorted(trimmed, key=lambda c: c.confidence, reverse=True)[:max_clips]
         top_set = {(c.start, c.end) for c in top}
         trimmed = [c for c in trimmed if (c.start, c.end) in top_set]
 
     return trimmed
+
+
+def top_k_by_confidence(
+    clips: List[ClipSpan],
+    target_count: int,
+) -> List[ClipSpan]:
+    """Fallback selector — keep the top-N highest-confidence clips,
+    preserving source order in the returned list.
+    """
+    if len(clips) <= target_count:
+        return list(clips)
+    top = sorted(clips, key=lambda c: c.confidence, reverse=True)[:target_count]
+    keep_keys = {(c.start, c.end) for c in top}
+    return [c for c in clips if (c.start, c.end) in keep_keys]
 
 
 # ---------------------------------------------------------------------------

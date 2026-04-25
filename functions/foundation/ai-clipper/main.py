@@ -35,7 +35,7 @@ from config_loader import load_config as load_json_config
 from config import load_config
 from s3_client import S3Client
 
-from ingest import ffprobe, scene, vision, clips
+from ingest import ffprobe, scene, vision, clips, curate
 from ingest import s3_helpers, tables
 from schemas import EXTRACTED_CLIPS_SCHEMA  # noqa: F401
 
@@ -262,14 +262,43 @@ def _handle(ctx, event, log, t_start):
             matched,
             merge_gap_seconds=cfg.get_duration("merge_gap_seconds"),
         )
+        # Duration filter only — count cap is handled by the curation
+        # stage below so all duration-valid candidates flow through.
+        target_count = cfg.get_int("max_clips_per_source")
         constrained = clips.constrain_clips(
             merged,
             min_clip_seconds=cfg.get_duration("min_clip_seconds"),
             max_clip_seconds=cfg.get_duration("max_clip_seconds"),
-            max_clips=cfg.get_int("max_clips_per_source"),
+            max_clips=None,
         )
+
+        # ── 7b. Curation — when more candidates match than target, ask
+        # an LLM to pick the best N (with diversity + match-quality
+        # heuristics). Falls back to top-K-by-confidence on any error.
+        if cfg.get_bool("curation_enabled") and len(constrained) > target_count:
+            log(f"       curating {len(constrained)} candidates → top {target_count}...")
+            curation = curate.curate_clips(
+                constrained,
+                prompt=prompt,
+                target_count=target_count,
+                api_key=api_key,
+                model=cfg.get_string("curation_model"),
+                inference_host=cfg_file.get("inference", {}).get("host")
+                              or "inference.selab.vastdata.com",
+                timeout=int(cfg.get_duration("curation_timeout_seconds")),
+                retries=cfg.get_int("curation_retries"),
+                diversity_weight=cfg.get_string("curation_diversity_weight"),
+            )
+            log(f"       curation: {curation.source}"
+                + (f" (error: {curation.error})" if curation.error else ""))
+            constrained = curation.selected
+        elif len(constrained) > target_count:
+            # Curation disabled — apply confidence top-K as a hard cap.
+            constrained = clips.top_k_by_confidence(constrained, target_count)
+            log(f"       curation off → top-{target_count} by confidence")
+
         # Editorial buffer — pad the matched span at head/tail (config-driven).
-        # Applied AFTER constrain so the buffer is additive on top of the
+        # Applied AFTER curation so the buffer is additive on top of the
         # matched-span max length, not bounded by it.
         pre  = cfg.get_duration("clip_buffer_pre_seconds")
         post = cfg.get_duration("clip_buffer_post_seconds")

@@ -64,6 +64,17 @@ export function videoURL(s3Path) {
   return `${BASE}/video?path=${encodeURIComponent(s3Path)}`;
 }
 
+// ── AI Clipper view (Phase 1+2 read API) ─────────────────────────────
+
+export function listSources() {
+  return fetchJSON("/sources");
+}
+
+export function getSource(sourceId) {
+  return fetchJSON(`/sources/${encodeURIComponent(sourceId)}`);
+}
+
+
 // ── Delivery packages (Phase 3) + C2PA ───────────────────────────────
 
 export function listPackages() {

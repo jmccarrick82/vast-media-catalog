@@ -128,7 +128,19 @@ def _handle(ctx, event, log, t_start):
         tables.upsert_source_video(session, bucket, schema,
                                    {"source_id": source_id, **extra})
 
-    mark_source(clip_extraction_status="pending:started")
+    # Seed identity fields up front. qc-inspector normally owns these, but
+    # if ai-clipper is the first writer (direct upload to qc-passed,
+    # tests, or qc-inspector skipped), we still want a usable row that
+    # the UI can render. upsert_source_video skips None values so we
+    # never clobber data qc-inspector already wrote.
+    mark_source(
+        clip_extraction_status="pending:started",
+        filename=filename,
+        s3_inbox_path=inbox_path,
+        current_s3_path=s3_path,
+        uploaded_at=time.time(),
+        status="active",
+    )
 
     # 4. Resolve prompt (S3 metadata → sidecar → default)
     try:
@@ -256,7 +268,20 @@ def _handle(ctx, event, log, t_start):
             max_clip_seconds=cfg.get_duration("max_clip_seconds"),
             max_clips=cfg.get_int("max_clips_per_source"),
         )
-        log(f"       {len(merged)} merged → {len(constrained)} after constraints")
+        # Editorial buffer — pad the matched span at head/tail (config-driven).
+        # Applied AFTER constrain so the buffer is additive on top of the
+        # matched-span max length, not bounded by it.
+        pre  = cfg.get_duration("clip_buffer_pre_seconds")
+        post = cfg.get_duration("clip_buffer_post_seconds")
+        buffered = clips.apply_buffer(
+            constrained,
+            pre_seconds=pre,
+            post_seconds=post,
+            source_duration=duration,
+        )
+        log(f"       {len(merged)} merged → {len(constrained)} constrained "
+            f"→ {len(buffered)} buffered (+{pre:.1f}s pre / +{post:.1f}s post)")
+        constrained = buffered
 
         # 9. Cut + upload each clip, write DB rows
         log("[8/8] cutting + uploading clips...")

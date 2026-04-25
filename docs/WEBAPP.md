@@ -35,6 +35,13 @@ endpoint can live-verify signed MP4s on demand.
 |----------|--------|-------------|
 | `GET /api/semantic-search?q=<text>&limit=N` | GET | Embed query with `nvidia/nv-embed-v1`, cosine-search the `subclips` collection, return top-K hits with summary, category, s3_path, and the passage that was embedded. |
 
+### Pre-ingest sources + AI Clipper view
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `GET /api/sources` | GET | List every `source_videos` row with summary fields (qc_status, clip_count, clip_prompt, etc). Sorted newest-first. Powers the `/ai-clipper` index. |
+| `GET /api/sources/<source_id>` | GET | One source's full row + every `extracted_clips` row for it, sorted by `clip_index`. Powers the `/ai-clipper` detail view. |
+
 ### Delivery packages + C2PA provenance (Phase 3)
 
 | Endpoint | Method | Description |
@@ -62,6 +69,7 @@ endpoint can live-verify signed MP4s on demand.
 | `/` | HomePage | Dashboard with 6 persona cards and system stats |
 | `/assets/:id` | AssetDossier | Full asset detail with relationship graph |
 | `/search` | SearchPage | Semantic search over subclip embeddings |
+| `/ai-clipper` | AiClipperPage | Sources sidebar + selected-source detail with full video + per-clip mini-players + position timeline + confidence chips |
 | `/packages` | PackagesPage | Grid of delivery packages with C2PA signed-status badge (new) |
 | `/packages/:packageId` | PackageDetailPage | Video player + rendition picker + **live C2PA panel** + licensing card + sidecar manifest viewer (new) |
 | `/settings` | SettingsPage | Schema-driven editor for every knob in `function_configs` (new) |

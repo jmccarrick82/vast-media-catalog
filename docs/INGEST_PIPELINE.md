@@ -239,6 +239,7 @@ Goal: per-clip AI-driven extraction given a natural-language prompt.
 - [x] `james-ai-clipper` function (revision 3 live): scene detect → per-shot vision classify → merge/constrain → cut + upload → emit `_ready.json` marker
 - [x] Prompt sourcing: S3 object metadata `x-amz-meta-clip-prompt` > sidecar JSON (not yet) > `ai-clipper:default_clip_prompt` config
 - [x] Two-pass strategy: 11B primary, borderline band (low ≤ conf < high) escalates to 90B; configurable
+- [x] Editorial buffer (v4, 2026-04-25): `clip_buffer_pre_seconds` + `clip_buffer_post_seconds` knobs add lead-in / tail-out around the matched span. Applied AFTER constrain — additive on top of `max_clip_seconds`. Clamped to `[0, source_duration]`.
 - [x] Smoke test: basketball clip with prompt `"A person handling a basketball"` → 4 shots → shot 0 MATCH 0.90 → 1 clip cut in ~18s
 
 ### Phase 3 — Packaging + C2PA provenance + hand-off ✅ COMPLETE (v4 deployed 2026-04-22)
@@ -277,6 +278,28 @@ Adobe Content Credentials panel, or contentcredentials.org web verifier.
 - `assets` table: `source_video_id` / `clip_id` / `package_id` columns — the delivery bundle doesn't yet copy renditions INTO `james-media-catalog` for the existing 8-function fan-out to pick up.
 - Patch to `metadata-extractor` that reads those S3 metadata tags.
 - "Hand-off" step that stitches the delivery back to the provenance pipeline. The packager currently stops at `s3://james-media-deliveries/<package_id>/` — a clean terminal state, just not yet wired to the downstream catalog.
+
+### Phase 2.5 — AI Clipper tab in webapp ✅ DEPLOYED (2026-04-25)
+
+A new `/ai-clipper` page surfaces every source the pre-ingest pipeline
+has touched, alongside its AI-extracted clips. Useful to compare the
+matched spans against the original at a glance — and to demo the
+clip-extraction story without digging through Trino.
+
+- [x] Backend `GET /api/sources` — list of all `source_videos` rows with
+      summary fields (qc_status, clip_count, clip_prompt, etc).
+- [x] Backend `GET /api/sources/<source_id>` — one source's row + every
+      `extracted_clips` row for it, sorted by `clip_index`.
+- [x] Frontend `/ai-clipper`:
+      - Sidebar list of sources, sortable + filter by filename/prompt/status
+      - Detail pane with header (prompt, qc/clip status, durations),
+        full-video player streamed from the source's current bucket
+        (qc-passed/qc-failed), and a row per clip with mini-player + a
+        "position-in-source" timeline strip + confidence chip + vision
+        verdict reason
+- [x] `/api/video?path=...` already streams from every bucket the pre-ingest
+      pipeline touches (added to `STREAMABLE_BUCKETS` earlier)
+- [x] Nav link added between Search and Packages
 
 ### Phase 3.5 — Webapp UI for packages ✅ COMPLETE (not yet deployed)
 

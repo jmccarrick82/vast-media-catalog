@@ -1126,10 +1126,19 @@ def list_packages():
     out = []
     for p in pkgs:
         src = src_by_id.get(p.get("source_id")) or {}
+        # Fall back through any s3 path on the source row when filename
+        # is missing (orphan rows from direct-to-qc-passed test uploads).
+        fname = src.get("filename")
+        if not fname:
+            for k in ("current_s3_path", "s3_inbox_path"):
+                v = src.get(k)
+                if v:
+                    fname = v.rsplit("/", 1)[-1]
+                    break
         out.append({
             "package_id":        p.get("package_id"),
             "source_id":         p.get("source_id"),
-            "source_filename":   src.get("filename"),
+            "source_filename":   fname,
             "clip_count":        _json_safe(p.get("clip_count")),
             "rendition_count":   _json_safe(p.get("rendition_count")),
             "total_size_bytes":  _json_safe(p.get("total_size_bytes")),
@@ -1318,6 +1327,88 @@ def get_rendition_c2pa(package_id, rendition_id):
         if tmp:
             try: os.unlink(tmp)
             except OSError: pass
+
+
+# ── Sources + AI Clipper view (Phase 1+2 read API) ─────────────────────
+#
+# Powers the /ai-clipper page: every raw upload (source_videos row) and
+# every clip the AI extracted from it (extracted_clips rows). This is
+# read-only — the data is produced by the qc-inspector + ai-clipper
+# pipelines.
+
+@app.route("/api/sources")
+def list_sources():
+    """List all source_videos rows with summary info for the index view.
+
+    Sorted newest-first. Includes clip counts and the prompt that was
+    used so the listing tells the story at a glance.
+    """
+    try:
+        with _vastdb_session().transaction() as tx:
+            tbl = tx.bucket(_bucket).schema(_schema).table("source_videos")
+            rows = tbl.select().read_all().to_pylist()
+    except Exception as e:
+        return jsonify({"error": f"source_videos query failed: {e}"}), 502
+
+    out = []
+    for r in rows:
+        out.append({
+            "source_id":               r.get("source_id"),
+            "filename":                r.get("filename"),
+            "current_s3_path":         r.get("current_s3_path") or r.get("s3_inbox_path"),
+            "duration_seconds":        _json_safe(r.get("duration_seconds")),
+            "width":                   _json_safe(r.get("width")),
+            "height":                  _json_safe(r.get("height")),
+            "qc_status":               r.get("qc_status"),
+            "qc_verdict_reason":       r.get("qc_verdict_reason"),
+            "clip_extraction_status":  r.get("clip_extraction_status"),
+            "clip_count":              _json_safe(r.get("clip_count")),
+            "clip_prompt":             r.get("clip_prompt"),
+            "clip_prompt_source":      r.get("clip_prompt_source"),
+            "clip_extracted_at":       _json_safe(r.get("clip_extracted_at")),
+            "package_id":              r.get("package_id"),
+            "packaging_status":        r.get("packaging_status"),
+            "uploaded_at":             _json_safe(r.get("uploaded_at")),
+            "created_at":              _json_safe(r.get("created_at")),
+            "updated_at":              _json_safe(r.get("updated_at")),
+        })
+    out.sort(key=lambda r: (r.get("uploaded_at") or r.get("created_at") or 0), reverse=True)
+    return jsonify({"sources": out, "count": len(out)})
+
+
+@app.route("/api/sources/<source_id>")
+def get_source(source_id):
+    """Full detail: the source_videos row + every extracted_clip for it,
+    ordered by clip_index. Used by the /ai-clipper detail view to show
+    the full video alongside its per-clip mini-players.
+    """
+    import ibis
+    try:
+        with _vastdb_session().transaction() as tx:
+            src_tbl = tx.bucket(_bucket).schema(_schema).table("source_videos")
+            src_rows = src_tbl.select(
+                predicate=ibis._.source_id == source_id,
+            ).read_all().to_pylist()
+            if not src_rows:
+                return jsonify({"error": f"no source {source_id}"}), 404
+            source = src_rows[0]
+
+            clips_tbl = tx.bucket(_bucket).schema(_schema).table("extracted_clips")
+            clip_rows = clips_tbl.select(
+                predicate=ibis._.source_id == source_id,
+            ).read_all().to_pylist()
+    except Exception as e:
+        return jsonify({"error": f"source query failed: {e}"}), 502
+
+    clips = [_row_to_dict(c) for c in clip_rows]
+    clips.sort(key=lambda c: c.get("clip_index") or 0)
+    for c in clips:
+        c["frame_scores"] = _parse_json_or_none(c.get("frame_scores_json")) or []
+
+    return jsonify({
+        "source": _row_to_dict(source),
+        "clips":  clips,
+    })
 
 
 # ── Serve React frontend ─────────────────────────────────────────────────

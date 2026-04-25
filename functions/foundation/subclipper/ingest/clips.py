@@ -80,6 +80,34 @@ CLIPS_CONFIG_SCHEMA = [
             "keyframes. Set false to force a re-encode for frame-exact cuts."
         ),
     },
+    {
+        "key": "clip_buffer_pre_seconds",
+        "type": "duration_seconds",
+        "default": 0.0,
+        "min": 0.0,
+        "max": 30.0,
+        "group": "Clip assembly",
+        "order": 60,
+        "description": (
+            "Lead-in padding added BEFORE each clip's matched span. "
+            "Helps soften abrupt cuts at the front of an AI-selected clip. "
+            "Applied after merge+constrain; clamped at the source's start."
+        ),
+    },
+    {
+        "key": "clip_buffer_post_seconds",
+        "type": "duration_seconds",
+        "default": 0.0,
+        "min": 0.0,
+        "max": 30.0,
+        "group": "Clip assembly",
+        "order": 70,
+        "description": (
+            "Tail-out padding added AFTER each clip's matched span. "
+            "Useful when the action you care about ends just past the "
+            "vision model's last matching shot. Clamped at source duration."
+        ),
+    },
 ]
 
 register_defaults(CONFIG_SCOPE, CLIPS_CONFIG_SCHEMA)
@@ -158,6 +186,46 @@ def merge_matching_shots(
                 model=s.model,
             )
     out.append(cur)
+    return out
+
+
+def apply_buffer(
+    clips: List[ClipSpan],
+    pre_seconds: float = 0.0,
+    post_seconds: float = 0.0,
+    source_duration: Optional[float] = None,
+) -> List[ClipSpan]:
+    """Pad each clip span by `pre_seconds` at the head and `post_seconds`
+    at the tail. Intended for editorial polish — softens the abrupt cut
+    that lands exactly at a vision-model shot boundary.
+
+    Clamps to [0, source_duration] when source_duration is provided.
+    Adjacent clips that grow into each other after buffering are NOT
+    re-merged here — call merge_matching_shots first if you need that.
+    A no-op when both buffers are zero or negative.
+    """
+    pre  = max(0.0, float(pre_seconds  or 0.0))
+    post = max(0.0, float(post_seconds or 0.0))
+    if pre == 0.0 and post == 0.0:
+        return clips
+    out: List[ClipSpan] = []
+    for c in clips:
+        new_start = max(0.0, c.start - pre)
+        new_end   = c.end + post
+        if source_duration is not None and source_duration > 0:
+            new_end = min(new_end, float(source_duration))
+        if new_end <= new_start:
+            # buffer math collapsed the span — skip it rather than emit
+            # a zero/negative clip
+            continue
+        out.append(ClipSpan(
+            start=new_start,
+            end=new_end,
+            shot_count=c.shot_count,
+            confidence=c.confidence,
+            reason=c.reason,
+            model=c.model,
+        ))
     return out
 
 

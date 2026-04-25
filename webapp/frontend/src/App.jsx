@@ -9,6 +9,7 @@ import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import PackagesPage from "./pages/PackagesPage";
 import PackageDetailPage from "./pages/PackageDetailPage";
+import AiClipperPage from "./pages/AiClipperPage";
 
 export default function App() {
   return (
@@ -24,6 +25,9 @@ export default function App() {
             </NavLink>
             <NavLink to="/search">
               Search
+            </NavLink>
+            <NavLink to="/ai-clipper">
+              AI Clipper
             </NavLink>
             <NavLink to="/packages">
               Packages
@@ -43,6 +47,7 @@ export default function App() {
           <Route path="/search" element={<SearchPage />} />
           <Route path="/architecture" element={<ArchitecturePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/ai-clipper" element={<AiClipperPage />} />
           <Route path="/packages" element={<PackagesPage />} />
           <Route path="/packages/:packageId" element={<PackageDetailPage />} />
           <Route path="/assets" element={<Navigate to="/" replace />} />

@@ -111,7 +111,12 @@ function PackageHeader({ pkg, source, clips }) {
               margin: 0, fontSize: 18, fontWeight: 600,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>
-              {source?.filename || <em>unknown source</em>}
+              {source?.filename
+                || basename(source?.current_s3_path)
+                || basename(source?.s3_inbox_path)
+                || (source?.source_id
+                    ? <span style={{ color: "var(--text-dim)" }}>source {source.source_id.slice(0, 8)}…</span>
+                    : <em>unknown source</em>)}
             </h1>
             <Pill
               color={pkg.status === "ready" ? "blue" : pkg.status === "failed" ? "red" : "yellow"}
@@ -659,6 +664,12 @@ function Stat({ label, value, highlight }) {
   );
 }
 
+
+function basename(p) {
+  if (!p) return null;
+  const i = p.lastIndexOf("/");
+  return i >= 0 ? p.slice(i + 1) : p;
+}
 
 function ErrorBox({ text }) {
   return (

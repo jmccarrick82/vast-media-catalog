@@ -130,7 +130,7 @@ function PackageCard({ pkg }) {
             marginTop: 4, marginBottom: 8,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
-            {pkg.source_filename || <em style={{ color: "var(--text-dim)" }}>(no source)</em>}
+            {pkg.source_filename || (pkg.source_id ? <span style={{ color: "var(--text-dim)" }}>source {pkg.source_id.slice(0, 8)}…</span> : <em style={{ color: "var(--text-dim)" }}>(no source)</em>)}
           </div>
         </div>
         <span style={{

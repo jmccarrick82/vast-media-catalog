@@ -35,7 +35,7 @@ from config_loader import load_config as load_json_config
 from config import load_config
 from s3_client import S3Client
 
-from ingest import ffprobe, scene, vision, clips, curate
+from ingest import ffprobe, scene, vision, clips, curate, audio
 from ingest import s3_helpers, tables
 from schemas import EXTRACTED_CLIPS_SCHEMA  # noqa: F401
 
@@ -295,6 +295,64 @@ def _handle(ctx, event, log, t_start):
             max_clips=None,
         )
 
+        # ── 7a. Audio-aware excitement pass (Phase 2.6) ──────────────
+        # Compute a per-source loudness baseline (median short-term LUFS
+        # over the whole source) and a per-candidate p95 short-term
+        # LUFS. The delta gets folded into the curation prompt so a
+        # candidate landing on a crowd roar / shouting announcer beats
+        # a visually-similar candidate landing on near-silence.
+        if cfg.get_bool("audio_analysis_enabled") and constrained:
+            try:
+                baseline_lufs = audio.compute_baseline_lufs(
+                    local,
+                    window=cfg.get_duration("audio_baseline_lufs_window_seconds"),
+                )
+            except Exception as ae:
+                log(f"       WARN: audio baseline failed — {ae}")
+                baseline_lufs = None
+
+            if baseline_lufs is not None:
+                log(f"       audio baseline: {baseline_lufs:.1f} LUFS (source-wide median short-term)")
+                use_whisper = cfg.get_bool("audio_use_whisper")
+                inference_host = (
+                    cfg_file.get("inference", {}).get("host")
+                    or "inference.selab.vastdata.com"
+                )
+                for span in constrained:
+                    try:
+                        feats = audio.extract_audio_features(
+                            local,
+                            start=span.start,
+                            end=span.end,
+                            use_whisper=use_whisper,
+                            api_key=api_key if use_whisper else None,
+                            inference_host=inference_host,
+                        )
+                    except Exception as fe:
+                        log(f"       WARN: audio feats failed for "
+                            f"{span.start:.1f}..{span.end:.1f}s — {fe}")
+                        continue
+
+                    span.audio_peak_lufs = feats.peak_lufs
+                    if feats.short_term_lufs_p95 is not None:
+                        span.audio_excitement_db = feats.short_term_lufs_p95 - baseline_lufs
+                    if feats.transcript:
+                        # Trim long transcripts so the curation prompt stays compact.
+                        excerpt = feats.transcript.strip()
+                        if len(excerpt) > 240:
+                            excerpt = excerpt[:237] + "…"
+                        span.audio_transcript = excerpt
+
+                    if span.audio_excitement_db is not None:
+                        p95 = baseline_lufs + span.audio_excitement_db
+                        log(f"       audio  {span.start:6.1f}..{span.end:6.1f}s  "
+                            f"p95={p95:6.1f} LUFS  ({span.audio_excitement_db:+.1f} dB vs baseline)")
+                    else:
+                        log(f"       audio  {span.start:6.1f}..{span.end:6.1f}s  "
+                            f"(no LUFS samples)")
+            else:
+                log("       audio: no baseline (no audio stream or all silence) — skipping")
+
         # ── 7b. Curation — when more candidates match than target, ask
         # an LLM to pick the best N (with diversity + match-quality
         # heuristics). Falls back to top-K-by-confidence on any error.
@@ -391,6 +449,11 @@ def _handle(ctx, event, log, t_start):
                 "match_reason":      clip.reason,
                 "vision_model":      clip.model,
                 "frame_scores_json": json.dumps([]),
+                # Audio-aware excitement (Phase 2.6) — None when audio
+                # analysis is disabled or the source had no audio.
+                "audio_peak_lufs":     clip.audio_peak_lufs,
+                "audio_excitement_db": clip.audio_excitement_db,
+                "audio_transcript_excerpt": clip.audio_transcript,
                 "status":            "active",
             })
             clip_ids_written.append(clip_id)

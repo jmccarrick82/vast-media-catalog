@@ -53,6 +53,7 @@ def _import_all_schemas():
         "shared.ingest.vision",     # AI clipper: vision inference (Phase 2)
         "shared.ingest.clips",      # AI clipper: clip assembly (Phase 2)
         "shared.ingest.curate",     # AI clipper: LLM curation (Phase 2)
+        "shared.ingest.audio",      # AI clipper: audio-aware excitement (Phase 2.6)
         "shared.ingest.transcode",  # Packager: rendition presets (Phase 3)
         "shared.ingest.thumbnail",  # Packager: thumbnail knobs (Phase 3)
         "shared.ingest.manifest",   # Packager: licensing defaults + sidecar toggle (Phase 3)

@@ -209,13 +209,45 @@ def _build_curation_prompt(
     diversity_weight: str,
 ) -> str:
     diversity_text = _DIVERSITY_BLURB.get(diversity_weight, _DIVERSITY_BLURB["high"])
+
+    # Detect whether any candidate has audio metadata. When the audio
+    # pass is disabled (or all candidates fell back to None) we strip
+    # the audio guidance entirely so we don't waste tokens telling the
+    # LLM about a signal it can't see.
+    has_audio = any(c.audio_excitement_db is not None for c in candidates)
+
     lines: List[str] = []
     for i, c in enumerate(candidates, start=1):
         reason = (c.reason or "").strip().replace("\n", " ")
-        if len(reason) > 220:
-            reason = reason[:217] + "…"
+        if len(reason) > 200:
+            reason = reason[:197] + "…"
+
+        # Audio cue — formatted to make it cheap for the LLM to parse.
+        # `+12.3 dB ↑` is meaningfully different from `+1.2 dB`; the
+        # arrow is a visual anchor for "louder than typical".
+        audio_chunk = ""
+        if c.audio_excitement_db is not None:
+            db = c.audio_excitement_db
+            arrow = "↑↑" if db >= 8 else ("↑" if db >= 3 else "")
+            audio_chunk = f", audio {db:+.1f}dB {arrow}".rstrip()
+
         lines.append(
-            f"{i}. [{c.start:.1f}s–{c.end:.1f}s, conf {c.confidence:.2f}] {reason}"
+            f"{i}. [{c.start:.1f}s–{c.end:.1f}s, conf {c.confidence:.2f}{audio_chunk}] {reason}"
+        )
+        if c.audio_transcript:
+            transcript = c.audio_transcript.strip().replace("\n", " ")
+            if len(transcript) > 160:
+                transcript = transcript[:157] + "…"
+            lines.append(f"   transcript: \"{transcript}\"")
+
+    audio_guidance = ""
+    if has_audio:
+        audio_guidance = (
+            "- Audio cues matter. A clip with audio excitement >= +8 dB above the source "
+            "baseline (crowd roar, announcer shouting, sudden volume spike on contact) "
+            "typically marks a more interesting moment than one with audio near baseline.\n"
+            "- Balance audio and visual: don't stuff the reel with crowd-noise picks if "
+            "their visual content is repetitive — diversity still matters.\n"
         )
 
     body = (
@@ -231,8 +263,9 @@ def _build_curation_prompt(
         "near-duplicate of an earlier pick is worse than a moderate-confidence unique scene.\n"
         "- Prefer good chronological spread across the source so the highlight reel feels "
         "like it covers the whole video rather than clustering at the start.\n"
-        "- If a candidate's description is generic or thin, discount it.\n\n"
-        f"Return ONLY a JSON array of the {target} candidate numbers (1-based) you'd keep, "
+        "- If a candidate's description is generic or thin, discount it.\n"
+        + audio_guidance
+        + f"\nReturn ONLY a JSON array of the {target} candidate numbers (1-based) you'd keep, "
         f"ordered by quality (best first). Example: [3, 7, 1, 12, 5]\n"
         "Do not return any prose — just the JSON array."
     )

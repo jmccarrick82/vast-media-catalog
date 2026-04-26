@@ -120,23 +120,37 @@ register_defaults(CONFIG_SCOPE, CLIPS_CONFIG_SCHEMA)
 
 @dataclass
 class MatchedShot:
-    """A shot (start, end) plus its best vision-model verdict."""
+    """A shot (start, end) plus its best vision-model verdict.
+
+    Audio fields are populated by Phase 2.6's audio-aware excitement
+    pass; left None for callers that don't run audio analysis.
+    """
     start: float
     end: float
     confidence: float
     reason: str
     model: str
+    audio_peak_lufs: Optional[float] = None
+    audio_excitement_db: Optional[float] = None
+    audio_transcript: Optional[str] = None
 
 
 @dataclass
 class ClipSpan:
-    """A final clip range plus the merged-shot metadata behind it."""
+    """A final clip range plus the merged-shot metadata behind it.
+
+    Audio fields are populated by the ai-clipper handler after merge —
+    one ffmpeg pass per candidate is far cheaper than per-shot.
+    """
     start: float
     end: float
     shot_count: int
     confidence: float  # max across merged shots
     reason: str        # reason of the peak-confidence shot
     model: str
+    audio_peak_lufs: Optional[float] = None
+    audio_excitement_db: Optional[float] = None
+    audio_transcript: Optional[str] = None
 
     @property
     def duration(self) -> float:
@@ -164,6 +178,9 @@ def merge_matching_shots(
         confidence=sorted_shots[0].confidence,
         reason=sorted_shots[0].reason,
         model=sorted_shots[0].model,
+        audio_peak_lufs=sorted_shots[0].audio_peak_lufs,
+        audio_excitement_db=sorted_shots[0].audio_excitement_db,
+        audio_transcript=sorted_shots[0].audio_transcript,
     )
 
     for s in sorted_shots[1:]:
@@ -176,6 +193,22 @@ def merge_matching_shots(
                 cur.confidence = s.confidence
                 cur.reason = s.reason
                 cur.model = s.model
+            # Audio: carry the max excitement across merged shots — one
+            # loud beat in the middle of an otherwise-quiet sequence is
+            # exactly the moment we want highlighted. Transcript wins by
+            # confidence (the louder shot's words are usually the
+            # interesting line).
+            if s.audio_excitement_db is not None and (
+                cur.audio_excitement_db is None
+                or s.audio_excitement_db > cur.audio_excitement_db
+            ):
+                cur.audio_excitement_db = s.audio_excitement_db
+                if s.audio_transcript:
+                    cur.audio_transcript = s.audio_transcript
+            if s.audio_peak_lufs is not None and (
+                cur.audio_peak_lufs is None or s.audio_peak_lufs > cur.audio_peak_lufs
+            ):
+                cur.audio_peak_lufs = s.audio_peak_lufs
         else:
             out.append(cur)
             cur = ClipSpan(
@@ -185,6 +218,9 @@ def merge_matching_shots(
                 confidence=s.confidence,
                 reason=s.reason,
                 model=s.model,
+                audio_peak_lufs=s.audio_peak_lufs,
+                audio_excitement_db=s.audio_excitement_db,
+                audio_transcript=s.audio_transcript,
             )
     out.append(cur)
     return out
@@ -226,6 +262,9 @@ def apply_buffer(
             confidence=c.confidence,
             reason=c.reason,
             model=c.model,
+            audio_peak_lufs=c.audio_peak_lufs,
+            audio_excitement_db=c.audio_excitement_db,
+            audio_transcript=c.audio_transcript,
         ))
     return out
 
@@ -260,6 +299,9 @@ def constrain_clips(
             confidence=c.confidence,
             reason=c.reason,
             model=c.model,
+            audio_peak_lufs=c.audio_peak_lufs,
+            audio_excitement_db=c.audio_excitement_db,
+            audio_transcript=c.audio_transcript,
         )
         trimmed.append(c2)
 

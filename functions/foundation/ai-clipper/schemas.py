@@ -472,6 +472,11 @@ EXTRACTED_CLIPS_SCHEMA = pa.schema([
     pa.field("vision_model",          pa.string()),   # which model produced the match
     pa.field("frame_scores_json",     pa.string()),   # JSON: [{t, confidence, reason}]
 
+    # Audio-aware excitement (Phase 2.6)
+    pa.field("audio_peak_lufs",        pa.float64()),  # max short-term LUFS within span
+    pa.field("audio_excitement_db",    pa.float64()),  # p95 short-term LUFS minus source baseline
+    pa.field("audio_transcript_excerpt", pa.string()), # Whisper transcript (when enabled)
+
     # Lifecycle
     pa.field("status",                pa.string()),   # active|superseded|deleted
     pa.field("created_at",            pa.float64()),

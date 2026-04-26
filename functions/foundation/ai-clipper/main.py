@@ -128,6 +128,29 @@ def _handle(ctx, event, log, t_start):
         tables.upsert_source_video(session, bucket, schema,
                                    {"source_id": source_id, **extra})
 
+    # ── Idempotency guard ────────────────────────────────────────────
+    # The DataEngine broker occasionally re-delivers the same S3 event
+    # after the function returns (we've seen this on every long run).
+    # If we already produced clips for this source, return early
+    # instead of re-running scene detect + 50+ vision calls.
+    import ibis
+    with session.transaction() as tx:
+        src_tbl = tx.bucket(bucket).schema(schema).table("source_videos")
+        existing = src_tbl.select(
+            predicate=ibis._.source_id == source_id,
+        ).read_all().to_pylist()
+    if existing and existing[0].get("clip_extraction_status") == "done":
+        prior_count = existing[0].get("clip_count") or 0
+        log(f"[skip] source {source_id[:8]}… already extracted "
+            f"({prior_count} clips). Set clip_extraction_status to "
+            f"something other than 'done' to force a re-run.")
+        return json.dumps({
+            "source_id":       source_id,
+            "skipped":         True,
+            "reason":          "clip_extraction_status=done (idempotent)",
+            "prior_clip_count": prior_count,
+        })
+
     # Seed identity fields up front. qc-inspector normally owns these, but
     # if ai-clipper is the first writer (direct upload to qc-passed,
     # tests, or qc-inspector skipped), we still want a usable row that

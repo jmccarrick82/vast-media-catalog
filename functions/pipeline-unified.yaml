@@ -40,7 +40,7 @@ manifest:
     # classification calls for a long video.
     - name: james-ai-clipper-2
       function_vrn: vast:dataengine:functions:james-ai-clipper
-      revision: 6
+      revision: 7
       config:
         log_level: DEBUG
       resources:
@@ -80,7 +80,7 @@ manifest:
     # CPU-heavy (multiple ffmpeg passes + c2patool signing per rendition).
     - name: james-media-packager-1
       function_vrn: vast:dataengine:functions:james-media-packager
-      revision: 4
+      revision: 5
       config:
         log_level: DEBUG
       resources:

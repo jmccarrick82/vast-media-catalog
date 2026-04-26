@@ -159,6 +159,29 @@ def _handle(ctx, event, log, t_start):
     )
     bucket, schema = ctx.user_data["bucket"], ctx.user_data["schema"]
 
+    # ── Idempotency guard ────────────────────────────────────────────
+    # The broker re-delivers the same _ready.json event after the
+    # function returns. Each retry would produce a duplicate package
+    # with 51 fresh transcodes + signs (~10 minutes of work). Skip
+    # when the source row already says we're done. To force a re-run,
+    # set source_videos.packaging_status to anything other than 'done'.
+    with session.transaction() as tx:
+        src_tbl = tx.bucket(bucket).schema(schema).table("source_videos")
+        prior = src_tbl.select(
+            predicate=ibis._.source_id == source_id,
+        ).read_all().to_pylist()
+    if prior and prior[0].get("packaging_status") == "done":
+        prior_pkg = prior[0].get("package_id")
+        log(f"[skip] source {source_id[:8]}… already packaged "
+            f"(package_id={prior_pkg}). Set packaging_status to "
+            f"something other than 'done' to force a re-run.")
+        return json.dumps({
+            "skipped":           True,
+            "reason":            "packaging_status=done (idempotent)",
+            "source_id":         source_id,
+            "existing_package_id": prior_pkg,
+        })
+
     with session.transaction() as tx:
         src_tbl = tx.bucket(bucket).schema(schema).table("source_videos")
         t = ibis.table(src_tbl.columns())

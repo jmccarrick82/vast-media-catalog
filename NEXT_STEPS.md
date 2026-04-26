@@ -1,6 +1,33 @@
 # NEXT_STEPS — Current state + what's queued
 
-_Last refreshed: 2026-04-23 end-of-day_
+_Last refreshed: 2026-04-25 evening_
+
+## Top of queue: audio-aware excitement signal (Phase 2.6)
+
+**Why:** vision-only clipping picks 5 visually-similar "swing/at-bat"
+clips on baseball that don't capture actual moments of excitement —
+it has no way to tell a routine pitch from a walk-off home run.
+
+**Plan + step-by-step build sequence:** see
+[`docs/TODO_AUDIO_EXCITEMENT.md`](docs/TODO_AUDIO_EXCITEMENT.md).
+
+Headline approach: new `shared/ingest/audio.py` module wrapping ffmpeg
+`ebur128` + `astats` (cheap; loudness peak above source baseline) plus
+optional Whisper transcript (expensive; opt-in). Per-candidate audio
+features get folded into the LLM curator's prompt so it can prefer
+"swing into a crowd roar" over "swing into silence".
+
+4 new config knobs under `ai-clipper`:
+`audio_analysis_enabled`, `audio_use_whisper`,
+`audio_baseline_lufs_window_seconds`, `audio_excitement_min_db`.
+
+3 new columns on `extracted_clips`:
+`audio_peak_lufs`, `audio_excitement_db`, `audio_transcript_excerpt`.
+
+Acceptance test: same 10-min CWS source, same prompt, but the 5
+selected clips should shift compared to today's vision-only picks
+(`8.6s / 102s / 232s / 326s / 543s`) — at least 2 should land on
+moments where audio is ≥8 dB above baseline.
 
 ## Where things stand
 

@@ -324,6 +324,56 @@ clip-extraction story without digging through Trino.
 - [x] `/packages` nav link added to the header
 - [ ] **Build + deploy on `.91`** — blocked behind user preference (pending .204 cluster migration; deferred for now)
 
+### Phase 2.6 — Audio-aware "excitement" signal (PLANNED)
+
+**Why:** the vision-only path cherry-picks visually-recognizable shots
+(any swing, any pitch). On a baseball broadcast that produces 5 perfectly
+chronologically-spread clips that are all just "guy in batting stance" —
+not interesting. Real excitement is partly audible: crowd roar, announcer
+getting loud/fast. We need to weight clip selection by audio energy +
+speech excitement, not just visual recognition.
+
+**Approach (lean, builds on existing pieces):**
+
+1. **`shared/ingest/audio.py`** — new library module:
+   - `extract_audio_features(src, start, end) → {peak_lufs, rms_db,
+     short_term_lufs_p95, speech_rate_wpm}`. Wraps ffmpeg `ebur128`
+     filter for loudness; ffmpeg `astats` for RMS/peak; Whisper API
+     (already wired in subclip-ai-analyzer) for transcript + speech rate.
+   - Cheap pass: just loudness. Expensive pass (toggle): Whisper too.
+
+2. **Per-candidate audio score** in `ai-clipper/main.py`:
+   - For each merged candidate span (BEFORE curation), call
+     `extract_audio_features` and store on the `MatchedShot` dataclass:
+     `audio_peak_lufs`, `audio_baseline_lufs`, `audio_excitement_db`
+     (peak − source-baseline median).
+   - Pass these into the curation prompt as additional signal lines.
+
+3. **Curation prompt update** in `shared/ingest/curate.py`:
+   - Add an "Audio cues" section per candidate showing
+     `loudness +N dB above baseline, transcript: "<excerpt>"`.
+   - Tell the LLM to weight excitement: a swing into a crowd roar
+     beats a swing into silence.
+
+4. **New config knobs** under `ai-clipper`:
+   - `audio_analysis_enabled` (bool, default true)
+   - `audio_use_whisper` (bool, default false — speech is expensive)
+   - `audio_baseline_lufs_window_seconds` (default 30 — how long a window
+     to compute the source's "quiet" baseline)
+   - `audio_excitement_min_db` (default 6 — floor for "above baseline")
+
+5. **Schema add** to `extracted_clips`:
+   - `audio_peak_lufs` (float64) — for surfacing in the UI later
+   - `audio_excitement_db` (float64)
+   - `audio_transcript_excerpt` (string) — when Whisper enabled
+
+6. **UI surface** — show the excitement score badge next to the vision
+   confidence chip on `/ai-clipper` and `/packages/<id>` clip rows.
+
+**Stretch (later):** wav2vec2 emotion classifier for "excitement"
+classification on the speech itself, not just loudness. But loudness +
+context is probably 80% there for sports content.
+
 ### Phase 4 — Generic reusable subclipper ✅ BUILT (not deployed)
 
 Goal: a stateless "chop this video at these timestamps with these encoding overrides" function, invokable directly from scripts or other workflows without going through S3 triggers.

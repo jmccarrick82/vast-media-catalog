@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft, Shield, ShieldCheck, ShieldAlert, ShieldX,
   FileJson, Loader2, AlertCircle, ChevronRight, ChevronDown,
+  ChevronLeft as ChevLeft, ChevronRight as ChevRight,
   Copy, ExternalLink, Film, Hash, Clock, Award, Bot, Scissors,
 } from "lucide-react";
 import {
@@ -69,12 +70,29 @@ export default function PackageDetailPage() {
 
       <PackageHeader pkg={pkg} source={source} clips={clips} />
 
+      {/* Clip strip — quick jump to any of the N clips */}
+      <ClipStrip
+        clips={clips}
+        selectedClipIndex={selected?.clipIndex}
+        onSelectClip={(clipIndex) => {
+          const clip = clips.find((c) => c.clip_index === clipIndex);
+          const rend = clip?.renditions?.[0];
+          if (clip && rend) setSelected({ clipIndex, renditionId: rend.rendition_id });
+        }}
+      />
+
       <div style={{
         display: "grid", gridTemplateColumns: "minmax(0, 1fr) 420px",
         gap: 20, marginTop: 16,
       }}>
         <div style={{ minWidth: 0 }}>
-          <Player rend={selectedRend} clip={selectedClip} />
+          <Player
+            rend={selectedRend}
+            clip={selectedClip}
+            clips={clips}
+            onPrev={() => navigateClip(selected, clips, -1, setSelected)}
+            onNext={() => navigateClip(selected, clips, +1, setSelected)}
+          />
           <ClipList
             clips={clips}
             selected={selected}
@@ -91,6 +109,81 @@ export default function PackageDetailPage() {
           />
           <LicensingCard pkg={pkg} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function navigateClip(selected, clips, dir, setSelected) {
+  if (!clips.length) return;
+  const order = clips.map((c) => c.clip_index).sort((a, b) => a - b);
+  const cur = selected?.clipIndex;
+  let i = order.indexOf(cur);
+  if (i < 0) i = 0;
+  let next = i + dir;
+  if (next < 0) next = order.length - 1;
+  if (next >= order.length) next = 0;
+  const nextIdx = order[next];
+  const clip = clips.find((c) => c.clip_index === nextIdx);
+  // Try to keep the same rendition preset; fall back to first.
+  const sameName = clip?.renditions?.find((r) => {
+    const cur_clip = clips.find((c) => c.clip_index === cur);
+    const cur_rend = cur_clip?.renditions?.find((r) => r.rendition_id === selected?.renditionId);
+    return cur_rend && r.rendition_name === cur_rend.rendition_name;
+  });
+  const rend = sameName || clip?.renditions?.[0];
+  if (clip && rend) setSelected({ clipIndex: nextIdx, renditionId: rend.rendition_id });
+}
+
+
+// ── Clip strip — horizontal quick-jump ──────────────────────────────
+
+function ClipStrip({ clips, selectedClipIndex, onSelectClip }) {
+  if (clips.length <= 1) return null;
+  const sorted = [...clips].sort((a, b) => (a.clip_index ?? 0) - (b.clip_index ?? 0));
+  return (
+    <div className="card" style={{
+      padding: "10px 14px", marginTop: 12,
+      display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+    }}>
+      <div style={{
+        fontSize: 11, color: "var(--text-dim)", fontWeight: 700,
+        textTransform: "uppercase", letterSpacing: 0.5,
+        marginRight: 6,
+      }}>
+        Clips
+      </div>
+      <div style={{
+        display: "flex", gap: 6, flex: 1, flexWrap: "wrap",
+      }}>
+        {sorted.map((c, i) => {
+          const sel = c.clip_index === selectedClipIndex;
+          return (
+            <button
+              key={c.clip_id}
+              onClick={() => onSelectClip(c.clip_index)}
+              title={`${c.start_seconds?.toFixed(1)}s – ${c.end_seconds?.toFixed(1)}s` +
+                     (c.match_reason ? ` — ${c.match_reason.slice(0, 60)}` : "")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 12px",
+                borderRadius: 8, border: sel ? "1px solid var(--vast-blue)" : "1px solid var(--border)",
+                background: sel ? "var(--vast-blue-dim)" : "transparent",
+                color: sel ? "var(--vast-blue)" : "var(--text)",
+                cursor: "pointer", fontSize: 12,
+                fontFamily: "SF Mono, Menlo, monospace",
+                fontWeight: sel ? 700 : 500,
+              }}
+            >
+              <span>#{i + 1}</span>
+              <span style={{ color: sel ? "var(--vast-blue)" : "var(--text-dim)" }}>
+                {Math.round(c.start_seconds ?? 0)}s
+              </span>
+              {c.renditions?.[0]?.c2pa_signed && <ShieldCheck size={10} />}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -151,18 +244,62 @@ function PackageHeader({ pkg, source, clips }) {
 
 // ── Video player + rendition picker ─────────────────────────────────
 
-function Player({ rend, clip }) {
+function Player({ rend, clip, clips, onPrev, onNext }) {
   if (!rend) {
     return <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)" }}>
       No rendition selected.
     </div>;
   }
+  const total = clips?.length || 0;
+  const order = (clips || []).map((c) => c.clip_index).sort((a, b) => a - b);
+  const pos   = order.indexOf(clip?.clip_index ?? -1);
+  const labelN = pos >= 0 ? pos + 1 : "?";
+
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 12 }}>
+      {/* Player header with clip nav */}
+      <div style={{
+        padding: "8px 12px",
+        borderBottom: "1px solid var(--border)",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+        background: "var(--vast-blue-dim)",
+      }}>
+        <button
+          onClick={onPrev}
+          disabled={total <= 1}
+          className="picker-btn picker-btn-dim"
+          title="Previous clip"
+          style={{ padding: "4px 8px", opacity: total <= 1 ? 0.4 : 1 }}
+        >
+          <ChevLeft size={14} /> Prev
+        </button>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--vast-blue)" }}>
+          Clip <span style={{ fontFamily: "SF Mono, Menlo, monospace", fontSize: 14 }}>
+            {labelN} of {total}
+          </span>
+          {clip?.start_seconds != null && (
+            <span style={{ color: "var(--text-dim)", fontWeight: 400, marginLeft: 10 }}>
+              · {clip.start_seconds.toFixed(1)}s – {clip.end_seconds.toFixed(1)}s
+              {" "}({(clip.end_seconds - clip.start_seconds).toFixed(1)}s)
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onNext}
+          disabled={total <= 1}
+          className="picker-btn picker-btn-dim"
+          title="Next clip"
+          style={{ padding: "4px 8px", opacity: total <= 1 ? 0.4 : 1 }}
+        >
+          Next <ChevRight size={14} />
+        </button>
+      </div>
+
       <video
         key={rend.rendition_id}
         src={videoURL(rend.rendition_s3_path)}
         controls
+        autoPlay
         preload="metadata"
         style={{ width: "100%", maxHeight: 480, display: "block", background: "#000" }}
       />
@@ -173,9 +310,6 @@ function Player({ rend, clip }) {
           </strong>
           <span style={{ color: "var(--text-dim)", marginLeft: 8 }}>
             {rend.width}×{rend.height} · {rend.video_codec}/{rend.audio_codec}
-            {clip?.start_seconds != null && clip?.end_seconds != null && (
-              <> · {clip.start_seconds.toFixed(1)}s–{clip.end_seconds.toFixed(1)}s</>
-            )}
           </span>
         </div>
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
@@ -190,6 +324,22 @@ function Player({ rend, clip }) {
           )}
         </div>
       </div>
+      {clip?.match_reason && (
+        <div style={{
+          padding: "10px 14px",
+          borderTop: "1px solid var(--border)",
+          fontSize: 12, color: "var(--text-dim)", fontStyle: "italic",
+          background: "rgba(255,255,255,0.02)",
+        }}>
+          <strong style={{ color: "var(--text)", fontStyle: "normal" }}>Why this clip:</strong>{" "}
+          "{clip.match_reason}"
+          {clip.shot_count > 1 && (
+            <span style={{ marginLeft: 8 }}>
+              <Scissors size={10} style={{ verticalAlign: "text-bottom" }} /> {clip.shot_count} shots merged
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -201,13 +351,26 @@ function ClipList({ clips, selected, onSelect }) {
   return (
     <div className="card" style={{ padding: 0, marginBottom: 12 }}>
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 13 }}>
-        Clips ({clips.length}) — pick a rendition to play + verify
+        All clips ({clips.length}) — click any row to play, or pick a specific rendition
       </div>
-      {clips.map((c) => (
-        <div key={c.clip_id} style={{
-          padding: "10px 14px",
-          borderBottom: "1px solid var(--border)",
-        }}>
+      {clips.map((c) => {
+        const isActiveClip = selected?.clipIndex === c.clip_index;
+        const firstRend = c.renditions?.[0];
+        return (
+        <div
+          key={c.clip_id}
+          onClick={() => firstRend && onSelect({ clipIndex: c.clip_index, renditionId: firstRend.rendition_id })}
+          style={{
+            padding: "10px 14px",
+            borderBottom: "1px solid var(--border)",
+            cursor: "pointer",
+            background: isActiveClip ? "var(--vast-blue-dim)" : "transparent",
+            borderLeft: isActiveClip ? "3px solid var(--vast-blue)" : "3px solid transparent",
+            transition: "background 100ms ease",
+          }}
+          onMouseEnter={(e) => { if (!isActiveClip) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+          onMouseLeave={(e) => { if (!isActiveClip) e.currentTarget.style.background = "transparent"; }}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
             <div style={{ fontSize: 13 }}>
               <span style={{
@@ -234,7 +397,10 @@ function ClipList({ clips, selected, onSelect }) {
               "{c.match_reason}"
             </div>
           )}
-          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          <div
+            style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}
+            onClick={(e) => e.stopPropagation() /* clip-row click would override rendition pick */}
+          >
             {c.renditions.map((r) => {
               const sel = selected?.clipIndex === c.clip_index && selected?.renditionId === r.rendition_id;
               return (
@@ -252,7 +418,8 @@ function ClipList({ clips, selected, onSelect }) {
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
